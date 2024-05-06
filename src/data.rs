@@ -1,8 +1,12 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+use crate::storage::Storage;
+
 // User data, which is stored and accessible in all command invocations
-pub struct BotData {}
+pub struct BotData {
+    pub storage: Box<dyn Storage + Send + Sync>,
+}
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Entry {

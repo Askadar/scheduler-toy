@@ -58,6 +58,8 @@ pub async fn save_schedule(
     ctx: Context<'_>,
     #[description = "Channel to fetch schedule from"] channel: Option<serenity::GuildChannel>,
 ) -> Result<(), Error> {
+    let storage = &ctx.data().storage;
+    let guild = ctx.guild().unwrap().id.to_string();
     let sauce = channel.or(ctx.guild_channel().await).unwrap();
 
     let messages = sauce
@@ -75,9 +77,12 @@ pub async fn save_schedule(
     if entries.clone().count() > 0 {
         let mut schedule = parse_schedule(entries);
         schedule.sort_by_key(|e| e.date);
-        std::fs::write("schedule.json", serde_json::to_string(&schedule).unwrap()).unwrap();
+        storage
+            .set(&guild, &serde_json::to_string(&schedule).unwrap())
+            .await
+            .unwrap();
 
-        ctx.say(format_schedule(&schedule)).await?;
+        ctx.reply(format_schedule(&schedule)).await?;
     }
 
     Ok(())
@@ -85,16 +90,16 @@ pub async fn save_schedule(
 
 #[poise::command(slash_command)]
 pub async fn show_schedule(ctx: Context<'_>) -> Result<(), Error> {
-    let schedule = std::fs::read("schedule.json");
+    let storage = &ctx.data().storage;
+    let guild = ctx.guild().unwrap().id.to_string();
+    let schedule = storage.get(&guild).await;
 
     match schedule {
-        Ok(schedule) => {
-            let schedule: Vec<Entry> = serde_json::from_slice(&schedule).unwrap();
-            ctx.say(format_schedule(&schedule)).await?;
+        Some(schedule) => {
+            ctx.reply(format_schedule(&schedule)).await?;
         }
-        Err(err) => {
-            println!("Failed to read schedule file {:?}", err);
-            ctx.say("No schedule saved").await?;
+        None => {
+            ctx.reply("No schedule saved").await?;
         }
     }
 
@@ -103,24 +108,24 @@ pub async fn show_schedule(ctx: Context<'_>) -> Result<(), Error> {
 
 #[poise::command(slash_command)]
 pub async fn next_stream(ctx: Context<'_>) -> Result<(), Error> {
-    let schedule = std::fs::read("schedule.json");
+    let storage = &ctx.data().storage;
+    let guild = ctx.guild().unwrap().id.to_string();
+    let schedule = storage.get(&guild).await;
 
     match schedule {
-        Ok(schedule) => {
-            let schedule: Vec<Entry> = serde_json::from_slice(&schedule).unwrap();
+        Some(schedule) => {
             let now = chrono::Utc::now();
             for e in schedule {
                 let scheduled = e.date.unwrap();
 
                 if scheduled.timestamp() > now.timestamp() {
-                    ctx.say(format_entry(&e)).await?;
+                    ctx.reply(format_entry(&e)).await?;
                     break;
                 }
             }
         }
-        Err(err) => {
-            println!("Failed to read schedule file {:?}", err);
-            ctx.say("No schedule saved").await?;
+        None => {
+            ctx.reply("No schedule saved").await?;
         }
     }
 
