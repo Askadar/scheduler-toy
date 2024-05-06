@@ -1,8 +1,11 @@
 use poise::serenity_prelude::{self as serenity};
-use storage::FsStorage;
+use storage::{
+    // FsStorage,
+    RedisStorage,
+};
 
 use crate::data::BotData;
-use crate::schedule::{save_schedule, show_schedule, next_stream};
+use crate::schedule::{next_stream, save_schedule, show_schedule};
 
 pub mod data;
 pub mod schedule;
@@ -19,18 +22,14 @@ async fn main() {
 
     let framework = poise::Framework::builder()
         .options(poise::FrameworkOptions {
-            commands: vec![
-                save_schedule(),
-                show_schedule(),
-                next_stream(),
-                ],
+            commands: vec![save_schedule(), show_schedule(), next_stream()],
             ..Default::default()
         })
         .setup(|ctx, _ready, framework| {
             Box::pin(async move {
                 poise::builtins::register_globally(ctx, &framework.options().commands).await?;
                 Ok(BotData {
-                    storage: Box::new(FsStorage::default()),
+                    storage: Box::new(RedisStorage::default()),
                 })
             })
         })

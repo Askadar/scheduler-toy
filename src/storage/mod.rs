@@ -1,7 +1,9 @@
 pub mod fs;
+pub mod redis;
 pub use fs::FsStorage;
+pub use redis::RedisStorage;
+
 use poise::serenity_prelude::async_trait;
-// pub use redis::RedisStorage;
 
 use crate::data::Entry;
 
