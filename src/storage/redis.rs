@@ -27,7 +27,7 @@ impl Storage for RedisStorage {
     async fn get(&self, guild: &str) -> Option<Vec<Entry>> {
         let r = self.redis.lock();
         if let Err(e) = r {
-            println!("Failed to accedd redit [{e}]");
+            println!("Failed to acquire redit [{e}]");
             return None;
         }
         let mut r = r.unwrap();
@@ -57,7 +57,7 @@ impl Storage for RedisStorage {
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let r = self.redis.lock();
         if let Err(e) = r {
-            println!("Failed to accedd redit [{e}]");
+            println!("Failed to acquire redit [{e}]");
             return Err(e.to_string().into());
         }
         let mut r = r.unwrap();

@@ -5,38 +5,56 @@ use poise::serenity_prelude::{self as serenity, GetMessages};
 type Error = Box<dyn std::error::Error + Send + Sync>;
 type Context<'a> = poise::Context<'a, BotData, Error>;
 
-fn parse_schedule<'a, C>(lines: C) -> Vec<Entry>
+fn parse_schedule<'a, C>(lines: C) -> Option<Vec<Entry>>
 where
     C: IntoIterator<Item = &'a str>,
 {
     let entries = lines
         .into_iter()
-        .map(move |s| {
+        .filter_map(move |s| {
             let parts = s.split(" - ").collect::<Vec<_>>();
             match parts.len() {
-                2 => Entry::new(&parts),
-                len => panic!("Expected 2 parts, got {}", len),
+                2 => Some(Entry::new(&parts)),
+                _ => None,
             }
         })
-        .map(|entry| {
+        .filter_map(|entry| {
             let teststr = format!("{} {} 00:00", chrono::Utc::now().year(), entry.datestr);
 
             let date = NaiveDateTime::parse_from_str(&teststr, "%Y %d/%m %l%p %M:%S");
-            let date_time = date
-                .unwrap()
-                .and_local_timezone(chrono::FixedOffset::east_opt(10 * 3600).unwrap())
-                .unwrap()
-                .to_utc();
+            let date_time = match date {
+                Ok(date) => {
+                    let date = date
+                        .and_local_timezone(
+                            chrono::FixedOffset::east_opt(10 * 3600)
+                                .expect("Failed to create constant timezone"),
+                        )
+                        .map(|d| d.to_utc())
+                        .single();
 
-            Entry {
-                datestr: entry.datestr,
-                label: entry.label,
-                date: Some(date_time),
+                    date
+                }
+                Err(e) => {
+                    eprintln!("Failed to parse date [{}] reason [{e}]", entry.datestr);
+                    None
+                }
+            };
+
+            match date_time {
+                Some(_) => Some(Entry {
+                    datestr: entry.datestr,
+                    label: entry.label,
+                    date: date_time,
+                }),
+                None => None,
             }
         })
         .collect::<Vec<_>>();
 
-    entries
+    if entries.len() == 0 {
+        return None;
+    }
+    Some(entries)
 }
 
 fn format_schedule(entries: &[Entry]) -> String {
@@ -59,8 +77,14 @@ pub async fn save_schedule(
     #[description = "Channel to fetch schedule from"] channel: Option<serenity::GuildChannel>,
 ) -> Result<(), Error> {
     let storage = &ctx.data().storage;
-    let guild = ctx.guild().unwrap().id.to_string();
-    let sauce = channel.or(ctx.guild_channel().await).unwrap();
+    let guild = ctx
+        .guild()
+        .ok_or("Save schedule can only be called from whithin a discord server")?
+        .id
+        .to_string();
+    let sauce = channel
+        .or(ctx.guild_channel().await)
+        .ok_or("Failed to find channel to get schedule from")?;
 
     let messages = sauce
         .messages(&ctx.http(), GetMessages::new().limit(1))
@@ -75,14 +99,21 @@ pub async fn save_schedule(
         .take_while(|s| s.trim() != "");
 
     if entries.clone().count() > 0 {
-        let mut schedule = parse_schedule(entries);
-        schedule.sort_by_key(|e| e.date);
-        storage
-            .set(&guild, &serde_json::to_string(&schedule).unwrap())
-            .await
-            .unwrap();
+        let schedule = parse_schedule(entries);
+        match schedule {
+            Some(mut schedule) => {
+                schedule.sort_by_key(|e| e.date);
+                let data = serde_json::to_string(&schedule)?;
 
-        ctx.reply(format_schedule(&schedule)).await?;
+                storage.set(&guild, &data).await?;
+
+                ctx.reply(format_schedule(&schedule)).await?;
+            }
+            None => {
+                ctx.reply("No schedule found in provided channel's last messages")
+                    .await?;
+            }
+        }
     }
 
     Ok(())
